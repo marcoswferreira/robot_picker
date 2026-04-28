@@ -1,63 +1,48 @@
-# 🤖 Robot Framework Variable Extractor
+# Robot Framework Element Picker
 
-![Version](https://img.shields.io/badge/version-1.1-blue)
-![Platform](https://img.shields.io/badge/platform-Chrome%20|%20Edge-lightgrey)
-![License](https://img.shields.io/badge/license-MIT-green)
+A high-productivity Chrome extension designed to rapidly extract UI element variables for Robot Framework. Optimized for complex enterprise applications built with **Angular** and **PrimeNG**.
 
-Uma extensão leve e poderosa para o Google Chrome desenhada para acelerar a criação de scripts de automação no **Robot Framework**. Extraia variáveis, seletores e valores diretamente do browser com um clique.
+## 🚀 Features
 
----
+- **Toggleable Selection Mode:** Enable or disable the element picker at any time via the popup menu.
+- **Bulk Capture Mode:** One-click extraction of all interactive elements within containers (Accordions, Dialogs, Tables, Cards).
+- **Semantic Locators:** Automatically generates robust XPaths and CSS selectors, prioritizing `formcontrolname`, Labels, and Tooltips over fragile dynamic IDs.
+- **Smart Naming Convention:** Automatically suggests variable names in `SNAKE_UPPER_CASE` based on element type, text, and context (e.g., `${BTN_SAVE_DADOS_PESSOAIS}`).
+- **Modal Awareness:** Intelligently handles Dialogs, ensuring locators are anchored to the active modal and background elements are ignored.
+- **Table/Grid Optimization:** Captures action buttons in table rows, automatically anchoring locators to a unique identifier in the row (e.g., a Name or ID column).
+- **Toast Notifications:** Visual feedback directly on the page whenever a variable is copied to the clipboard.
 
-## ✨ Funcionalidades
+## 🛠 Installation
 
-- **🎯 Modo de Seleção Inteligente:** Ative ou desative a captura pelo popup para navegar normalmente sem interrupções.
-- **🔍 Geração de Locators:** Gera automaticamente o melhor seletor disponível (`id`, `name`, `css` ou `xpath`).
-- **📝 Formatação Automática:** Copia para o clipboard no formato padrão do Robot: `${var_name}    locator    valor`.
-- **💡 Sugestão de Nomes:** Sugere nomes de variáveis baseados no ID, Name ou Placeholder do elemento.
-- **⚡ Feedback Visual:** Highlight azul moderno e notificações (Toasts) não intrusivas ao capturar dados.
+1. **Clone or Download** this repository to your local machine.
+2. Open Google Chrome and navigate to `chrome://extensions/`.
+3. Enable **"Developer mode"** (toggle in the top-right corner).
+4. Click **"Load unpacked"**.
+5. Select the folder containing the extension files.
 
----
+## 📖 How to Use
 
-## 🚀 Como Instalar
+### Single Element Capture
+1. Open the extension popup and turn on **Selection Mode**.
+2. Hover over any element on the page (it will be highlighted with a blue border).
+3. **Click** the element.
+4. The variable line will be copied to your clipboard (e.g., `${INPUT_FIRST_NAME}    css=input[formcontrolname='firstName']`).
 
-Siga estes passos simples para começar:
+### Bulk Capture (Grids, Forms, Accordions)
+1. In the popup, enable both **Selection Mode** and **Bulk Mode**.
+2. Hover over a container (e.g., a Table or an Accordion header). The entire container will be highlighted in light blue.
+3. **Click** the container.
+4. All interactive fields inside will be copied as a block of variables to your clipboard.
 
-1. **Descarregue o Projeto:** Faça o download ou clone este repositório para a sua máquina local.
-2. **Abra as Extensões:** No Chrome, aceda a `chrome://extensions/`.
-3. **Ative o Modo de Programador:** No canto superior direito, ligue o interruptor **Modo de programador**.
-4. **Carregue a Extensão:** Clique em **Carregar expandida** (Load unpacked) e selecione a pasta onde descarregou os ficheiros.
-5. **Fixe a Extensão:** Para acesso rápido, clique no ícone do puzzle no Chrome e fixe o **Robot Picker**.
+## 🤖 Naming & Locator Patterns
 
----
+The extension follows professional Robot Framework best practices:
 
-## 🛠️ Como Usar
+- **Modals:** `${MODAL_TITLE_FIELD_NAME}` -> `xpath=//div[@role="dialog"]//input[@formcontrolname='...']`
+- **Accordions:** `${BTN_ACTION_TITLE}` -> `xpath=//p-accordion-panel[...]//button[...]`
+- **Tables:** `${BTN_EDIT_ROW_TEXT}` -> `xpath=//tr[.//td[contains(., 'Text')]]//button[...]`
+- **Standard Inputs:** Uses `formcontrolname` (CSS) or Label-to-Input mapping (XPath).
 
-1. Navegue até à página web onde deseja extrair dados.
-2. Clique no ícone da extensão e ative o **Modo de Seleção**.
-3. Passe o rato sobre os elementos para ver o destaque azul.
-4. **Clique** no elemento desejado.
-5. Um balão no canto inferior direito confirmará a captura.
-6. **Cole (Ctrl+V)** diretamente no seu ficheiro `.robot`.
+## 📄 License
 
-### Exemplo de Saída:
-```robotframework
-${input_username}    id=user-name    standard_user
-```
-
----
-
-## 📁 Estrutura do Projeto
-
-- `manifest.json`: Configurações da extensão (Manifest V3).
-- `content.js`: Lógica de interceção, geração de seletores e UI.
-- `popup.html/js`: Interface de controlo para ativar/desativar a ferramenta.
-- `GEMINI.md`: Notas de desenvolvimento e especificações técnicas.
-
----
-
-## 📝 Contribuição
-
-Sinta-se à vontade para abrir issues ou enviar pull requests com melhorias, especialmente em algoritmos de geração de XPath ou novos formatos de saída!
-
----
-*Desenvolvido para facilitar a vida de QA Engineers e Automatizadores.*
+This project is for internal use and productivity enhancement for Robot Framework automation teams.
