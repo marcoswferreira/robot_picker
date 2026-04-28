@@ -27,3 +27,7 @@ Este projeto é uma extensão para Google Chrome desenhada para agilizar o proce
 ## 📝 Notas de Implementação
 
 O script atual captura o `innerText` ou `value`. Para automação de UI mais complexa, considere expandir o `content.js` para gerar XPaths únicos para cada elemento clicado.
+
+## 📄 License
+
+This work is licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-nc-sa/4.0/).
