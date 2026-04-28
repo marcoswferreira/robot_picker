@@ -19,14 +19,32 @@ chrome.runtime.onMessage.addListener((request) => {
     }
 });
 
+// --- Helpers de Estado da UI ---
+
+function getActiveModal() {
+    // Busca apenas modais que estão visíveis e ocupando espaço real
+    const modalSelectors = 'p-dialog:not([style*="display: none"]), [role="dialog"], .p-confirm-dialog';
+    const modals = Array.from(document.querySelectorAll(modalSelectors));
+    return modals.find(m => m.offsetWidth > 0 && window.getComputedStyle(m).visibility !== 'hidden');
+}
+
 // --- Lógica de UI (Highlight) ---
 
 document.addEventListener('mouseover', (e) => {
     if (!isPickerActive) return;
+    
+    const activeModal = getActiveModal();
+    // Se houver um modal e o mouse estiver fora dele (no backdrop), ignora
+    if (activeModal && !activeModal.contains(e.target)) return;
+
     if (hoveredElement) hoveredElement.style.outline = '';
     
     if (isBulkMode) {
         hoveredElement = findBulkContainer(e.target);
+        // Se o container encontrado estiver fora do modal ativo, ignora
+        if (activeModal && hoveredElement && !activeModal.contains(hoveredElement)) {
+            hoveredElement = null;
+        }
     } 
     
     if (!hoveredElement) hoveredElement = e.target;
@@ -51,12 +69,16 @@ document.addEventListener('mouseout', (e) => {
 document.addEventListener('click', (e) => {
     if (!isPickerActive) return;
 
+    const activeModal = getActiveModal();
+    if (activeModal && !activeModal.contains(e.target)) return;
+
     e.preventDefault();
     e.stopPropagation();
 
     if (isBulkMode) {
         const container = findBulkContainer(e.target);
-        if (container) {
+        // Verifica se o container é válido (dentro do modal se houver um)
+        if (container && (!activeModal || activeModal.contains(container))) {
             captureBulk(container);
             return;
         }
@@ -91,13 +113,8 @@ function handleSingleClick(element) {
 function findTableRowContext(el) {
     const tr = el.closest('tr');
     if (!tr) return null;
-
-    // Tenta encontrar uma célula que pareça um identificador (não a primeira necessariamente)
     const cells = Array.from(tr.querySelectorAll('td'));
-    // Ignora a última (geralmente ações) e a primeira (geralmente status/tipo) se houver mais
-    let anchorCell = cells[0];
-    if (cells.length > 2) anchorCell = cells[2] || cells[1]; // Prioriza coluna 3 ou 2 (Curso/Instituição)
-
+    let anchorCell = cells.length > 2 ? (cells[2] || cells[1]) : cells[0];
     const text = anchorCell ? anchorCell.innerText.trim().split('\n')[0] : "";
     return text ? { anchorText: text } : null;
 }
@@ -112,14 +129,12 @@ function captureBulk(container) {
         count = output ? output.trim().split('\n').length : 0;
     } else {
         const context = findContext(container);
-        // Filtra para não pegar elementos de paginação no bulk
         const query = 'button:not(.p-paginator-page):not(.p-paginator-next):not(.p-paginator-prev):not(.p-paginator-first):not(.p-paginator-last), a, input, select, textarea, p-autocomplete, p-dropdown, p-select, p-datepicker, [role="button"], .p-button:not(.p-paginator-element)';
         const elements = Array.from(container.querySelectorAll(query));
         const seenLocators = new Set();
 
         elements.forEach(el => {
             if (el.offsetWidth > 0 || el.offsetHeight > 0) {
-                // Evitar capturar containers como elementos clicáveis no bulk
                 if (el.classList.contains('p-accordion-header') || el.classList.contains('p-dialog-header')) return;
 
                 const locator = generateSemanticLocator(el, context, null);
@@ -142,11 +157,8 @@ function captureBulk(container) {
 function captureTableActions(table) {
     const rows = Array.from(table.querySelectorAll('tbody tr'));
     let bulkOutput = "";
-
     rows.forEach((row, index) => {
         const rowCtx = findTableRowContext(row) || { anchorText: `ROW_${index + 1}` };
-        
-        // Foca nos botões de ação (dentro de divs de ações ou última coluna)
         const actionButtons = row.querySelectorAll('button, .p-button, [role="button"]');
         actionButtons.forEach(btn => {
             if (btn.offsetWidth > 0 || btn.offsetHeight > 0) {
@@ -156,11 +168,8 @@ function captureTableActions(table) {
             }
         });
     });
-
     return bulkOutput;
 }
-
-// --- Funções de Geração ---
 
 function findContext(el) {
     const containers = [
@@ -169,7 +178,6 @@ function findContext(el) {
         { selector: 'p-dialog', titleSelector: '.p-dialog-title' },
         { selector: '.card, p-card', titleSelector: '.card-header, .card-title, .p-card-title' }
     ];
-
     for (const config of containers) {
         const parent = el.closest(config.selector);
         if (parent) {
@@ -181,106 +189,93 @@ function findContext(el) {
 }
 
 function generateSemanticLocator(el, context, rowContext) {
+    const isModal = el.closest('p-dialog, [role="dialog"]');
     const tagName = el.tagName.toLowerCase();
-    const component = el.closest('p-select, p-dropdown, p-autocomplete, p-datepicker, p-calendar, p-inputmask') || el;
+    const component = el.closest('p-select, p-dropdown, p-autocomplete, p-datepicker, p-calendar, p-inputnumber, p-inputmask') || el;
     const formControl = component.getAttribute('formcontrolname');
 
     let elPart = "";
 
-    // 1. formcontrolname
     if (formControl) {
         const compTag = component.tagName.toLowerCase();
-        if (['p-autocomplete', 'p-datepicker', 'p-calendar', 'p-inputmask'].includes(compTag)) {
-            elPart = `css=${compTag}[formcontrolname='${formControl}'] input`;
-        } else {
-            elPart = `css=${compTag}[formcontrolname='${formControl}']`;
+        const inputSuffix = ['p-autocomplete', 'p-datepicker', 'p-calendar', 'p-inputnumber', 'p-inputmask'].includes(compTag) ? '//input' : '';
+        elPart = `//${compTag}[@formcontrolname='${formControl}']${inputSuffix}`;
+    }
+
+    if (!elPart && (tagName === 'button' || el.closest('button') || el.classList.contains('p-button'))) {
+        const btn = el.closest('button, .p-button') || el;
+        const text = btn.innerText.trim();
+        if (text === 'Confirmar') {
+            elPart = `//button[span[text()='Confirmar']]`;
+        } else if (text) {
+            elPart = `//button[.//span[contains(text(), '${text}')]]`;
         }
-        return elPart; // Retorna direto pois formcontrolname é globalmente estável
     }
 
-    // 2. Tooltip / Icon-button
-    const tooltip = el.getAttribute('ptooltip') || el.title;
-    if (tooltip && (tagName === 'button' || el.classList.contains('p-button'))) {
-        elPart = `//button[@ptooltip='${tooltip}']`;
-    }
-
-    // 3. Labels
     if (!elPart && ['input', 'textarea'].includes(tagName)) {
-        const labelInfo = findLabelInfo(el);
-        if (labelInfo) {
-            elPart = `//label[normalize-space()='${labelInfo.text}:']/parent::div/following-sibling::div//${tagName}`;
+        const labelText = findLabelText(el);
+        if (labelText) {
+            elPart = `//label[contains(text(), '${labelText}')]/parent::div//${tagName}`;
         }
     }
 
-    // 4. Texto
-    if (!elPart) {
-        const text = el.innerText.trim().split('\n')[0].slice(0, 30);
-        if (text) {
-            if (tagName === 'button' || el.closest('button')) {
-                elPart = `//button[.//span[contains(text(), '${text}')]]`;
-            } else {
-                elPart = `//${tagName}[contains(normalize-space(), '${text}')]`;
-            }
-        } else {
-            elPart = `//${tagName}`;
-        }
-    }
+    if (!elPart) elPart = `//${tagName}`;
 
-    // Aplicação de Contexto
     if (rowContext) {
-        const relPath = elPart.startsWith('//') ? elPart.substring(2) : elPart;
-        return `xpath=//tr[.//td[contains(normalize-space(), "${rowContext.anchorText}")]]//${relPath}`;
+        const cleanPart = elPart.startsWith('//') ? elPart.substring(2) : elPart;
+        return `xpath=//tr[.//td[contains(normalize-space(), "${rowContext.anchorText}")]]//${cleanPart}`;
     }
 
-    if (context) {
-        const relPath = elPart.startsWith('//') ? elPart.substring(2) : elPart;
-        if (context.containerTag === 'p-accordion-panel') {
-            return `xpath=//p-accordion-panel[.//p-accordion-header[contains(normalize-space(), '${context.title}')]]//${relPath}`;
-        }
-        if (context.containerTag === 'p-dialog') {
-            return `xpath=//p-dialog//${relPath}`;
-        }
+    if (isModal) {
+        const cleanPart = elPart.startsWith('//') ? elPart.substring(2) : elPart;
+        return `xpath=//div[@role="dialog"]//${cleanPart}`;
     }
 
-    return elPart.startsWith('css=') ? elPart : `xpath=${elPart}`;
+    if (context && context.containerTag === 'p-accordion-panel') {
+        const cleanPart = elPart.startsWith('//') ? elPart.substring(2) : elPart;
+        return `xpath=//p-accordion-panel[.//p-accordion-header[contains(normalize-space(), '${context.title}')]]//${cleanPart}`;
+    }
+
+    return `xpath=${elPart}`;
 }
 
-function findLabelInfo(el) {
+function findLabelText(el) {
     const parentDiv = el.closest('div');
     if (parentDiv && parentDiv.previousElementSibling) {
-        const labelDiv = parentDiv.previousElementSibling;
-        const label = labelDiv.querySelector('label');
-        if (label) return { text: label.innerText.replace(':', '').trim() };
+        const label = parentDiv.previousElementSibling.querySelector('label');
+        if (label) return label.innerText.replace(':', '').trim();
     }
+    const labelAbove = el.closest('.p-field')?.querySelector('label');
+    if (labelAbove) return labelAbove.innerText.replace(':', '').trim();
     return null;
 }
 
 function suggestSemanticVarName(el, context, rowContext) {
-    const component = el.closest('p-select, p-dropdown, p-autocomplete, p-datepicker, p-calendar, p-inputmask') || el;
+    const component = el.closest('p-select, p-dropdown, p-autocomplete, p-datepicker, p-calendar, p-inputnumber, p-inputmask') || el;
     const formControl = component.getAttribute('formcontrolname');
+    const isModal = el.closest('p-dialog, [role="dialog"]');
     
     const tagMap = { 
         'button': 'BTN', 'a': 'LINK', 'input': 'INPUT', 'select': 'SELECT', 
-        'textarea': 'TEXTAREA', 'p-select': 'SELECT', 'p-dropdown': 'SELECT',
-        'p-datepicker': 'INPUT', 'p-calendar': 'INPUT'
+        'textarea': 'TEXTAREA', 'p-select': 'SELECT', 'p-datepicker': 'INPUT'
     };
-    
     const prefix = tagMap[component.tagName.toLowerCase()] || 'VAR';
     
     let baseName = formControl || el.getAttribute('ptooltip') || el.placeholder || el.innerText?.trim() || "ELEMENT";
     baseName = baseName.split('\n')[0].trim().toUpperCase().replace(/[^A-Z0-9]/g, '_');
 
-    const isModal = el.closest('p-dialog, [role="dialog"]');
-    const modalPrefix = isModal ? "MODAL_" : "";
+    if (isModal) {
+        const ctxText = context ? context.title.toUpperCase().replace(/[^A-Z0-9]/g, '_') : "DIALOG";
+        if (el.innerText.trim() === 'Confirmar') return `BTN_${ctxText}_CONFIRMAR`;
+        return `MODAL_${ctxText}_${baseName}`;
+    }
 
     let suffix = "";
     if (rowContext) suffix = `_${rowContext.anchorText.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
     else if (context) suffix = `_${context.title.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
 
-    return `${modalPrefix}${prefix}_${baseName}${suffix}`.replace(/__+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60);
+    return `${prefix}_${baseName}${suffix}`.replace(/__+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60);
 }
-
-// --- Helpers ---
 
 function copyToClipboard(text) {
     const input = document.createElement('textarea');
