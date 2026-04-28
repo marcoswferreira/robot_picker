@@ -45,4 +45,4 @@ The extension follows professional Robot Framework best practices:
 
 ## 📄 License
 
-This project is for internal use and productivity enhancement for Robot Framework automation teams.
+This work is licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-nc-sa/4.0/).
