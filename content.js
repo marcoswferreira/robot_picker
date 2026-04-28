@@ -38,7 +38,7 @@ document.addEventListener('mouseover', (e) => {
     if (isBulkMode) {
         hoveredElement = findBulkContainer(e.target);
         if (activeModal && hoveredElement && !activeModal.contains(hoveredElement)) hoveredElement = null;
-    } 
+    }
     if (!hoveredElement) hoveredElement = e.target;
 
     const color = isBulkMode ? '#03a9f4' : '#007AFF';
@@ -89,7 +89,7 @@ function handleSingleClick(element) {
     const targetElement = element.closest('button, a, input, select, textarea, p-autocomplete, p-dropdown, p-select, p-datepicker, p-inputnumber, p-inputmask, [role="button"], .p-button') || element;
     const rowContext = findTableRowContext(targetElement);
     const containerContext = findContext(targetElement);
-    
+
     const locator = generateSemanticLocator(targetElement, containerContext, rowContext);
     const varName = suggestSemanticVarName(targetElement, containerContext, rowContext);
 
@@ -180,6 +180,7 @@ function generateSemanticLocator(el, context, rowContext) {
     const id = component.id && !component.id.includes('pr_id') && !component.id.includes('ng-') && !/^\d+$/.test(component.id) ? component.id : null;
     const isModal = el.closest('p-dialog, [role="dialog"]');
 
+    // 1. PRIORIDADE: ID ou formControlName (CSS)
     if (id || formControl) {
         let cssSelector = "";
         const compTag = component.tagName.toLowerCase();
@@ -196,6 +197,7 @@ function generateSemanticLocator(el, context, rowContext) {
     const tagName = el.tagName.toLowerCase();
     let xpathPart = "";
     const tooltip = el.getAttribute('ptooltip') || el.title;
+
     if (tooltip && (tagName === 'button' || el.classList.contains('p-button'))) {
         xpathPart = `//button[@ptooltip='${tooltip}']`;
     } else if (tagName === 'button' || el.closest('button') || el.classList.contains('p-button')) {
@@ -205,12 +207,21 @@ function generateSemanticLocator(el, context, rowContext) {
     }
 
     if (!xpathPart && ['input', 'textarea'].includes(tagName)) {
-        const labelText = findLabelText(el);
-        if (labelText) xpathPart = `//label[contains(text(), '${labelText}')]/parent::div//${tagName}`;
+        const labelInfo = findAdvancedLabelInfo(el);
+        if (labelInfo) {
+            if (labelInfo.type === 'sibling') {
+                xpathPart = `//label[normalize-space()='${labelInfo.text}:']/following-sibling::${tagName}`;
+            } else if (labelInfo.type === 'complex') {
+                xpathPart = `//label[normalize-space()='${labelInfo.text}:']/parent::div/following-sibling::div//label[normalize-space()='${labelInfo.subLabel}:']/following-sibling::${tagName}`;
+            } else {
+                xpathPart = `//label[normalize-space()='${labelInfo.text}:']/parent::div/following-sibling::div//${tagName}`;
+            }
+        }
     }
 
     if (!xpathPart) xpathPart = `//${tagName}`;
 
+    // Contextos Finais
     if (rowContext) {
         const cleanPart = xpathPart.startsWith('//') ? xpathPart.substring(2) : xpathPart;
         return `xpath=//tr[.//td[contains(normalize-space(), "${rowContext.anchorText}")]]//${cleanPart}`;
@@ -227,63 +238,62 @@ function generateSemanticLocator(el, context, rowContext) {
     return `xpath=${xpathPart}`;
 }
 
-function findLabelText(el) {
-    const parentDiv = el.closest('div');
-    if (parentDiv && parentDiv.previousElementSibling) {
-        const label = parentDiv.previousElementSibling.querySelector('label');
-        if (label) return label.innerText.replace(':', '').trim();
+function findAdvancedLabelInfo(el) {
+    const parent = el.parentElement;
+
+    // Caso 1: Label é irmã direta do input (ex: Agência e Conta)
+    const prevLabel = el.previousElementSibling?.tagName === 'LABEL' ? el.previousElementSibling : null;
+    if (prevLabel) return { text: prevLabel.innerText.replace(':', '').trim(), type: 'sibling' };
+
+    // Caso 2: Padrão de Divs vizinhas (Label em uma, Input na outra)
+    const container = el.closest('div');
+    if (container && container.previousElementSibling) {
+        const label = container.previousElementSibling.querySelector('label');
+        if (label) {
+            const labelText = label.innerText.replace(':', '').trim();
+            // Verifica se é o caso complexo de DV (ex: Agência -> div -> DV)
+            if (container.parentElement.classList.contains('col-md-6') || container.parentElement.classList.contains('col-md-12')) {
+                // Pode ser um caso de múltiplos campos na mesma linha
+            }
+            return { text: labelText, type: 'div-sibling' };
+        }
     }
-    const labelAbove = el.closest('.p-field')?.querySelector('label');
-    if (labelAbove) return labelAbove.innerText.replace(':', '').trim();
+
     return null;
 }
 
-// --- Lógica de Nomenclatura: PREFIXO_CONTAINER_NOME ---
+function findLabelText(el) {
+    const info = findAdvancedLabelInfo(el);
+    return info ? info.text : null;
+}
 
 function suggestSemanticVarName(el, context, rowContext) {
     const component = el.closest('p-select, p-dropdown, p-autocomplete, p-datepicker, p-calendar, p-inputnumber, p-inputmask') || el;
     const formControl = component.getAttribute('formcontrolname');
     const isModal = el.closest('p-dialog, [role="dialog"]');
-    
-    const tagMap = { 
-        'button': 'BTN', 'a': 'LINK', 'input': 'INPUT', 'select': 'SELECT', 
+
+    const tagMap = {
+        'button': 'BTN', 'a': 'LINK', 'input': 'INPUT', 'select': 'SELECT',
         'textarea': 'TEXTAREA', 'p-select': 'SELECT', 'p-datepicker': 'INPUT',
         'p-inputnumber': 'INPUT', 'p-inputmask': 'INPUT', 'p-autocomplete': 'INPUT'
     };
-    
+
     let prefix = tagMap[component.tagName.toLowerCase()] || 'VAR';
     if (isModal) prefix = "MODAL";
 
-    // Nome do Campo (limpo)
-    let fieldName = formControl || component.id || el.getAttribute('ptooltip') || el.placeholder || el.innerText?.trim() || "ELEMENT";
+    let fieldName = formControl || component.id || el.getAttribute('ptooltip') || el.placeholder || findLabelText(el) || "ELEMENT";
     fieldName = fieldName.split('\n')[0].trim().toUpperCase().replace(/[^A-Z0-9]/g, '_');
 
-    // Nome do Container (limpo)
     let containerName = "";
-    if (rowContext) {
-        containerName = rowContext.anchorText;
-    } else if (context) {
-        containerName = context.title;
-    }
+    if (rowContext) containerName = rowContext.anchorText;
+    else if (context) containerName = context.title;
     containerName = containerName.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 
-    // Montagem final: PREFIXO_CONTAINER_NOME
-    let finalName = "";
-    if (containerName) {
-        finalName = `${prefix}_${containerName}_${fieldName}`;
-    } else {
-        finalName = `${prefix}_${fieldName}`;
-    }
+    let finalName = containerName ? `${prefix}_${containerName}_${fieldName}` : `${prefix}_${fieldName}`;
+    if (el.innerText.trim() === 'Confirmar') finalName = `BTN_${containerName}_CONFIRMAR`;
 
-    // Caso especial para botão Confirmar
-    if (el.innerText.trim() === 'Confirmar') {
-        finalName = `BTN_${containerName}_CONFIRMAR`;
-    }
-
-    // Limpeza final (evitar duplicatas no nome)
     const parts = finalName.split('_');
     const uniqueParts = parts.filter((part, index) => parts.indexOf(part) === index);
-    
     return uniqueParts.join('_').replace(/__+/g, '_').replace(/^_+|_+$/g, '').slice(0, 65);
 }
 
